@@ -16,6 +16,8 @@ module restaking::package_manager {
     friend restaking::earner_manager;
     friend restaking::slasher;
 
+    friend restaking::index_registry;
+
     const OWNER_NAME: vector<u8> = b"OWNER";
 
     const ENOT_OWNER: u64 = 1;
