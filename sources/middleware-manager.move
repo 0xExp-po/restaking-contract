@@ -1,4 +1,4 @@
-module restaking::package_manager {
+module middleware::middleware_manager {
     use aptos_framework::event;
     use aptos_framework::account::{Self, SignerCapability};
     use aptos_framework::resource_account;
@@ -6,17 +6,7 @@ module restaking::package_manager {
     use std::string::{Self, String};
     use std::signer;
 
-    friend restaking::coin_wrapper;
-    friend restaking::withdrawal;
-    friend restaking::staker_manager;
-    friend restaking::operator_manager;
-    friend restaking::staking_pool;
-    friend restaking::rewards_coordinator;
-    friend restaking::avs_manager;
-    friend restaking::earner_manager;
-    friend restaking::slasher;
-
-    friend restaking::index_registry;
+    friend middleware::index_registry;
 
     const OWNER_NAME: vector<u8> = b"OWNER";
 
@@ -49,13 +39,13 @@ module restaking::package_manager {
 
     /// Can be called by friended modules to obtain the resource account signer.
     public(friend) fun get_signer(): signer acquires PermissionConfig {
-        let signer_cap = &borrow_global<PermissionConfig>(@restaking).signer_cap;
+        let signer_cap = &borrow_global<PermissionConfig>(@middleware).signer_cap;
         account::create_signer_with_capability(signer_cap)
     }
 
     /// Can be called by friended modules to keep track of a system address.
     public(friend) fun add_address(name: String, object: address) acquires PermissionConfig {
-        let addresses = &mut borrow_global_mut<PermissionConfig>(@restaking).addresses;
+        let addresses = &mut borrow_global_mut<PermissionConfig>(@middleware).addresses;
         smart_table::upsert(addresses, name, object);
     }
 
@@ -77,12 +67,12 @@ module restaking::package_manager {
     }
 
     public fun get_address(name: String): address acquires PermissionConfig {
-        let addresses = &borrow_global<PermissionConfig>(@restaking).addresses;
+        let addresses = &borrow_global<PermissionConfig>(@middleware).addresses;
         *smart_table::borrow(addresses, name)
     }
 
     inline fun safe_permission_config(): &PermissionConfig acquires PermissionConfig {
-        borrow_global<PermissionConfig>(@restaking)
+        borrow_global<PermissionConfig>(@middleware)
     }
 
     #[test_only]
@@ -107,8 +97,4 @@ module restaking::package_manager {
         };
     }
 
-    #[test_only]
-    friend restaking::package_manager_tests;
-    #[test_only]
-    friend restaking::rewards_tests;
 }

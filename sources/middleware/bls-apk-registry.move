@@ -1,3 +1,3 @@
-module restaking::bls_apk_registry{
+module middleware::bls_apk_registry{
 
 }

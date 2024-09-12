@@ -1,6 +1,7 @@
-module restaking::service_manager{
+module middleware::service_manager{
     use restaking::avs_manager;
-    use restaking::stake_registry;
-    use restaking::registry_coordinator;
+
+    use middleware::stake_registry;
+    use middleware::registry_coordinator;
 
 }

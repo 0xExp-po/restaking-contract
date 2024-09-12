@@ -1,3 +1,3 @@
-module restaking::stake_registry{
+module middleware::stake_registry{
 
 }
