@@ -182,14 +182,14 @@ module middleware::stake_registry{
     fun weight_of_operator_for_quorum(quorum_number: u8, operator: address): (u128, bool) acquires StakeRegistryConfigs{
         let configs = stake_registry_configs();
         let weight: u128 = 0;
-        let strategy_param_length = strategy_param_length(quorum_number);
+        let strategy_param_length: u64 = smart_vector::length(smart_table::borrow(&configs.strategy_params, quorum_number));
         
         let shares = vector::empty<u128>();
-        for (i in 0..strategy_param_length) {
-            let token = strategyParamsByIndex(quorum_number, i).strategy;
+        for (i in 0..100) {
+            let strategy_params = smart_vector::borrow(smart_table::borrow(&configs.strategy_params, quorum_number), i);
+            let token = strategy_params.strategy;
             vector::push_back(&mut shares, staker_manager::staker_token_shares(operator, token));
             let share = staker_manager::staker_token_shares(operator, token);
-            let strategy_params = strategyParamsByIndex(quorum_number, i);
 
             if (share > 0 ) {
                 weight = weight + share*strategy_params.multiplier/WEIGHTING_DIVISOR;
@@ -277,7 +277,7 @@ module middleware::stake_registry{
 
         assert!(new_strategy_params_length>0, ENO_STRATEGY_PROVIED);
 
-        let existing_strategy_params_length = strategy_param_length(quorum_number);
+        let existing_strategy_params_length = strategy_params_length(quorum_number);
         let mut_configs = mut_stake_registry_configs();
         let mut_existing_strategy_params = smart_table::borrow_mut(&mut mut_configs.strategy_params, quorum_number);
         // TODO: should we limit strategy_params_length + existing_strategy_params_length
@@ -297,8 +297,6 @@ module middleware::stake_registry{
         *minimum_stake_for_quorum = minimum_stake;
     }
 
-
-
     inline fun last_stake_update(quorum_number: u8, history_length: u64): StakeUpdate {
         let configs = stake_registry_configs();
         let last_stake_update = vector::borrow(smart_table::borrow(&configs.total_stake_history, quorum_number), history_length-1);
@@ -317,17 +315,19 @@ module middleware::stake_registry{
         history_length
     }
 
-    inline fun strategy_param_length(quorum_number: u8): u64 {
+    #[view]
+    public fun strategy_params_length(quorum_number: u8): u64 acquires StakeRegistryConfigs {
         let configs = stake_registry_configs();
         let strategy_param_length = smart_vector::length(smart_table::borrow(&configs.strategy_params, quorum_number));
         strategy_param_length
     }
 
-    inline fun strategyParamsByIndex(quorum_number: u8, index: u64): & StrategyParams{
+    #[view]
+    public fun strategy_by_index(quorum_number: u8, index: u64): Object<Metadata> acquires StakeRegistryConfigs {
         let configs = stake_registry_configs();
         let strategy = smart_table::borrow(&configs.strategy_params, quorum_number);
         let strategyParams = smart_vector::borrow(strategy, index);
-        strategyParams
+        strategyParams.strategy
     }
     
     inline fun quorum_exists(quorum_number: u8) {

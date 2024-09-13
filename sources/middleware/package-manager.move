@@ -9,6 +9,7 @@ module middleware::middleware_manager {
     friend middleware::stake_registry;
     friend middleware::service_manager;
     friend middleware::bls_apk_registry;
+    friend middleware::registry_coordinator;
 
     const OWNER_NAME: vector<u8> = b"OWNER";
 
@@ -35,7 +36,7 @@ module middleware::middleware_manager {
         move_to(staking_signer, PermissionConfig {
             addresses: smart_table::new<String, address>(),
             signer_cap,
-        });
+        }); 
         add_address(string::utf8(OWNER_NAME), @deployer);
     }
 
