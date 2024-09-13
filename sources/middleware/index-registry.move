@@ -33,8 +33,8 @@ module middleware::index_registry{
     // TODO: create store
     struct IndexRegistryStore has key {
         operator_index: SmartTable<u8, SmartTable<String, u32>>,
-        update_history: SmartTable<u8, SmartTable<u32, SmartVector<OperatorUpdate>>>,
-        count_history: SmartTable<u8, SmartVector<QuorumUpdate>>
+        update_history: SmartTable<u8, SmartTable<u32, vector<OperatorUpdate>>>,
+        count_history: SmartTable<u8, vector<QuorumUpdate>>
     }
 
     struct IndexRegistryConfigs has key {
@@ -78,7 +78,7 @@ module middleware::index_registry{
 
         vector::for_each(quorum, |quorum_number| {
             let count_history = smart_table::borrow(&index_registry_store().count_history, quorum_number);
-            let count_history_length = smart_vector::length(count_history);
+            let count_history_length = vector::length(count_history);
             assert!(count_history_length > 0, EQUORUM_NOT_EXIST);
 
             let new_operator_count = increase_operator_count(quorum_number);
@@ -91,7 +91,7 @@ module middleware::index_registry{
     public(friend) fun deregister_operator(operator_id: String, quorum: vector<u8>) acquires IndexRegistryStore{
         vector::for_each(quorum, |quorum_number| {
             let count_history = smart_table::borrow(&index_registry_store().count_history, quorum_number);
-            let count_history_length = smart_vector::length(count_history);
+            let count_history_length = vector::length(count_history);
             assert!(count_history_length > 0, EQUORUM_NOT_EXIST);
 
             let index_to_remove = get_operator_index(quorum_number, operator_id);
@@ -104,20 +104,20 @@ module middleware::index_registry{
     }
 
     public(friend) fun init_quorum(quorum_number: u8) acquires IndexRegistryStore{
-        let count_history = smart_table::borrow_mut(&mut index_registry_store_mut().count_history, quorum_number);
-        let count_history_length = smart_vector::length(count_history);
+        let store = index_registry_store_mut();
+        let count_history = smart_table::borrow_mut(&mut store.count_history, quorum_number);
+        let count_history_length = vector::length(count_history);
         assert!(count_history_length == 0, EQUORUM_ALREADY_EXIST);
 
         let now = timestamp::now_seconds();
-        smart_vector::push_back(count_history, QuorumUpdate{
+        vector::push_back(count_history, QuorumUpdate{
             operator_count: 0,
             timestamp: now
         })
     }
 
     fun assign_operator_to_index(operator_id: String, quorum_number: u8, index: u32) acquires IndexRegistryStore {
-        let latest_update = latest_operator_update_mut(quorum_number, index);
-        update_operator_history(quorum_number, index, latest_update, operator_id);
+        update_operator_history(quorum_number, index, operator_id);
         set_operator_index(quorum_number, operator_id, index);
 
         event::emit(QuorumIndexUpdate{
@@ -130,72 +130,89 @@ module middleware::index_registry{
     fun pop_last_operator(quorum_number: u8, index: u32): String acquires IndexRegistryStore {
         let latest_update = latest_operator_update_mut(quorum_number, index);
         let remove_operator_id = latest_update.operator_id;
-        update_operator_history(quorum_number, index, latest_update, string::utf8(NOT_EXIST_ID));
+        update_operator_history(quorum_number, index, string::utf8(NOT_EXIST_ID));
 
         return remove_operator_id
     }
-    fun increase_operator_count(quorum_number: u8): u32 {
+    fun increase_operator_count(quorum_number: u8): u32 acquires IndexRegistryStore {
         let latest_update = latest_quorum_update_mut(quorum_number);
         let new_operator_count = latest_update.operator_count + 1;
 
-        update_count_history(quorum_number, latest_update, new_operator_count);
+        update_count_history(quorum_number, new_operator_count);
         return new_operator_count
     }
 
-    fun decrease_operator_count(quorum_number: u8): u32 {
+    fun decrease_operator_count(quorum_number: u8): u32 acquires IndexRegistryStore {
         let latest_update = latest_quorum_update_mut(quorum_number);
         let new_operator_count = latest_update.operator_count -1;
        
-        update_count_history(quorum_number, latest_update, new_operator_count);
+        update_count_history(quorum_number, new_operator_count);
         return new_operator_count
     }
 
-    fun update_operator_history(quorum_number: u8, operator_count: u32, latest_update: &mut OperatorUpdate, new_operator_id: String) {
+    fun update_operator_history(quorum_number: u8, operator_count: u32, new_operator_id: String) acquires IndexRegistryStore {
+        let latest_update = latest_operator_update_mut(quorum_number, operator_count);
         let now = timestamp::now_seconds();
         if (latest_update.timestamp == now) {
             latest_update.operator_id = new_operator_id;
         } else {
             let operator_history = operator_history_mut(quorum_number, operator_count);
-            smart_vector::push_back(operator_history, OperatorUpdate{
+            vector::push_back(operator_history, OperatorUpdate{
                 operator_id: new_operator_id,
                 timestamp: now
-            })
+            });
         }
     }
 
-    fun update_count_history(quorum_number: u8, latest_update: &mut QuorumUpdate, new_operator_count: u32) {
+    fun update_count_history(quorum_number: u8, new_operator_count: u32) acquires IndexRegistryStore {
+        let latest_update = latest_quorum_update_mut(quorum_number);
         let now = timestamp::now_seconds();
         if (latest_update.timestamp == now) {
             latest_update.operator_count = new_operator_count;
         } else {
-            let count_history = smart_table::borrow_mut(&mut index_registry_store_mut().count_history, quorum_number);
-            smart_vector::push_back(count_history, QuorumUpdate{
+            let store = index_registry_store_mut();
+            let count_history = smart_table::borrow_mut(&mut store.count_history, quorum_number);
+            vector::push_back(count_history, QuorumUpdate{
                 operator_count: new_operator_count,
                 timestamp: now
-            })
+            });
         }
     } 
 
     inline fun latest_operator_update_mut(quorum_number: u8, operator_count: u32): &mut OperatorUpdate acquires IndexRegistryStore{
-        let operator_history = operator_history_mut(quorum_number, operator_count);
-        let latest_update = smart_vector::borrow_mut(operator_history, smart_vector::length(operator_history) - 1);
+        let store = index_registry_store();
+        let operator_history_length = vector::length(smart_table::borrow(smart_table::borrow(&store.update_history, quorum_number), operator_count));
+        let operator_history_mut = operator_history_mut(quorum_number, operator_count);
+        let latest_update = vector::borrow_mut(operator_history_mut, operator_history_length - 1);
         latest_update
     }
 
     inline fun latest_quorum_update_mut(quorum_number: u8): &mut QuorumUpdate acquires IndexRegistryStore{
-        let count_history = smart_table::borrow_mut(&mut index_registry_store_mut().count_history, quorum_number);
-        let latest_update = smart_vector::borrow_mut(count_history, smart_vector::length(count_history) - 1);
+        let store = index_registry_store();
+        let count_history_length = vector::length(smart_table::borrow(&store.count_history, quorum_number));
+        let store_mut = index_registry_store_mut();
+        let count_history_mut = smart_table::borrow_mut(&mut store_mut.count_history, quorum_number);
+        let latest_update = vector::borrow_mut(count_history_mut, count_history_length - 1);
         latest_update
     }
 
-    inline fun operator_history_mut(quorum_number: u8, operator_count: u32): &mut SmartVector<OperatorUpdate> acquires IndexRegistryStore {
-        let update_history = smart_table::borrow_mut(&mut index_registry_store_mut().update_history, quorum_number);
-        let operator_history = smart_table::borrow_mut(update_history, operator_count);
+    inline fun operator_history_mut(quorum_number: u8, operator_count: u32): &mut vector<OperatorUpdate> acquires IndexRegistryStore {
+        let store_mut = index_registry_store_mut();
+        // let update_history = smart_table::borrow_mut(&mut store_mut.update_history, quorum_number);
+        let operator_history = smart_table::borrow_mut(smart_table::borrow_mut(&mut store_mut.update_history, quorum_number), operator_count);
+        operator_history
+
+    }
+
+    inline fun operator_history(quorum_number: u8, operator_count: u32): &vector<OperatorUpdate> acquires IndexRegistryStore {
+        let store = index_registry_store();
+        let operator_history = smart_table::borrow(smart_table::borrow(&store.update_history, quorum_number), operator_count);
         operator_history
     }
 
     inline fun set_operator_index(quorum_number: u8, operator_id: String, index: u32) acquires IndexRegistryStore {
-        let operator_index = smart_table::borrow_mut(&mut index_registry_store_mut().operator_index, quorum_number);
+        let store = index_registry_store_mut();
+        let operator_index = smart_table::borrow_mut(&mut store.operator_index, quorum_number);
         smart_table::upsert(operator_index, operator_id, index);
     }  
 
