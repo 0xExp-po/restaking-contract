@@ -7,6 +7,7 @@ module middleware::middleware_manager {
     use std::signer;
 
     friend middleware::index_registry;
+    friend middleware::bls_apk_registry;
     friend middleware::stake_registry;
 
     const OWNER_NAME: vector<u8> = b"OWNER";
