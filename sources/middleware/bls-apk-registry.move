@@ -4,10 +4,11 @@ module middleware::bls_apk_registry{
     use aptos_framework::timestamp;
 
     use aptos_std::crypto_algebra;
-    use aptos_std::bls12381::{Signature, PublicKey, public_key_to_bytes};
+    use aptos_std::bls12381::{AggrPublicKeysWithPoP, Signature, PublicKeyWithPoP, aggregate_pubkeys, public_key_with_pop_to_bytes};
     use aptos_std::bls12381_algebra::{G1, FormatG1Uncompr};
     use aptos_std::smart_table::{Self, SmartTable};
     use aptos_std::option;
+    use aptos_std::option::{Option};
 
     use std::string::{Self, String};
     use std::vector;
@@ -29,25 +30,26 @@ module middleware::bls_apk_registry{
     const EINVALID_PUBKEY_G2: u64 = 1105;
     const EOPERATOR_ALREADY_EXIST: u64 = 1106;
     const EPUBKEY_ALREADY_EXIST: u64 = 1107;
+    const EPUBKEY_NOT_EXIST: u64 = 1108;
 
     struct BLSApkRegistryStore has key {
         operator_to_pk_hash: SmartTable<address, vector<u8>>,
         pk_hash_to_operator: SmartTable<vector<u8>, address>,
-        operator_to_pk: SmartTable<address, PublicKey>,
+        operator_to_pk: SmartTable<address, PublicKeyWithPoP>,
         apk_history: SmartTable<u8, vector<ApkUpdate>>,
-        current_apk: SmartTable<u8, vector<PublicKey>>
+        current_apk: SmartTable<u8, vector<PublicKeyWithPoP>>
     }
 
     struct ApkUpdate has store, drop {
-        apk_hash: vector<u8>,
+        aggregate_pubkeys: Option<AggrPublicKeysWithPoP>,
         update_timestamp: u64,
         next_update_timestamp: u64
     }
 
     struct PubkeyRegistrationParams has copy, drop {
         signature: Signature,
-        pubkey_g1: PublicKey,
-        pubkey_g2: PublicKey
+        pubkey_g1: PublicKeyWithPoP,
+        pubkey_g2: PublicKeyWithPoP
     }
 
     struct BLSApkRegistryConfigs has key {
@@ -88,7 +90,7 @@ module middleware::bls_apk_registry{
 
         let now = timestamp::now_seconds();
         vector::push_back(apk_history, ApkUpdate{
-            apk_hash: crypto_algebra::serialize<G1, FormatG1Uncompr>(&crypto_algebra::zero<G1>()),
+            aggregate_pubkeys: option::none(),
             update_timestamp: now,
             next_update_timestamp: 0,
         })
@@ -111,10 +113,10 @@ module middleware::bls_apk_registry{
     }
 
     public(friend) fun register_bls_pubkey(operator: &signer, params: PubkeyRegistrationParams, pubkey_registration_msg_hash: vector<u8>): vector<u8> acquires BLSApkRegistryStore {
-        let g1_bytes = public_key_to_bytes(&params.pubkey_g1);
+        let g1_bytes = public_key_with_pop_to_bytes(&params.pubkey_g1);
         assert!(vector::length(&g1_bytes) == 96, EINVALID_PUBKEY_G1);
-        assert!(vector::length(&public_key_to_bytes(&params.pubkey_g2)) == 96, EINVALID_PUBKEY_G2);
-        let g1 = option::borrow(&crypto_algebra::deserialize<G1, FormatG1Uncompr>(&public_key_to_bytes(&params.pubkey_g1)));
+        assert!(vector::length(&public_key_with_pop_to_bytes(&params.pubkey_g2)) == 96, EINVALID_PUBKEY_G2);
+        let g1 = option::borrow(&crypto_algebra::deserialize<G1, FormatG1Uncompr>(&public_key_with_pop_to_bytes(&params.pubkey_g1)));
         let zero_g1 = crypto_algebra::zero<G1>();
         assert!(!crypto_algebra::eq(g1, &zero_g1), EZERO_PUBKEY);
 
@@ -134,16 +136,53 @@ module middleware::bls_apk_registry{
         return g1_bytes
     }
 
-    fun update_quorum_apk(quorum_numbers: vector<u8>, pubkey: &PublicKey, is_register: bool) acquires BLSApkRegistryStore {
+    fun update_quorum_apk(quorum_numbers: vector<u8>, pubkey: &PublicKeyWithPoP, is_register: bool) acquires BLSApkRegistryStore {
         let i = 0;
         while (i < vector::length(&quorum_numbers)) {
             let quorum_number = *vector::borrow(&quorum_numbers, i);
             let apk_history_length = vector::length(smart_table::borrow(&bls_apk_registry_store().apk_history, quorum_number));
             assert!(apk_history_length > 0, EQUORUM_DOES_NOT_EXIST);
 
-            // TODO
+            // Update pubkey
+            let current_apk = current_apk_mut(quorum_number);
+            if (is_register) {
+                vector::push_back(current_apk, *pubkey);
+            } else {
+                assert!(vector::contains(current_apk, pubkey), EPUBKEY_NOT_EXIST);
+                vector::remove_value(current_apk, pubkey);
+            };
+
+            let borrow_new_apk = *current_apk;
+            let new_aggr_pubkeys =  aggregate_pubkeys(borrow_new_apk);
+            
+            let latest_update = latest_apk_update_mut(quorum_number);
+            let now = timestamp::now_seconds();
+            if (latest_update.update_timestamp == now) {
+                latest_update.aggregate_pubkeys = option::some(new_aggr_pubkeys);
+            } else {
+                latest_update.next_update_timestamp = now;
+                let store_mut = bls_apk_registry_store_mut();
+                let apk_history_mut = smart_table::borrow_mut(&mut store_mut.apk_history, quorum_number);
+                vector::push_back(apk_history_mut, ApkUpdate{
+                    aggregate_pubkeys: option::some(new_aggr_pubkeys),
+                    update_timestamp: now,
+                    next_update_timestamp: 0
+                })
+            };
             i = i + 1;
         }
+    }
+
+    inline fun latest_apk_update_mut(quorum_number: u8): &mut ApkUpdate acquires BLSApkRegistryStore {
+        let store_mut = bls_apk_registry_store_mut();
+        let apk_history_length = vector::length(smart_table::borrow(&store_mut.apk_history, quorum_number));
+        let apk_history = vector::borrow_mut(smart_table::borrow_mut(&mut store_mut.apk_history, quorum_number), apk_history_length - 1);
+        apk_history
+    }
+    inline fun current_apk_mut(quorum_number: u8): &mut vector<PublicKeyWithPoP> acquires BLSApkRegistryStore {
+        let store_mut = bls_apk_registry_store_mut();
+        let current_apk_mut = smart_table::borrow_mut(&mut store_mut.current_apk, quorum_number);
+        return current_apk_mut
     }
 
     inline fun bls_apk_registry_store(): &BLSApkRegistryStore  acquires BLSApkRegistryStore {
