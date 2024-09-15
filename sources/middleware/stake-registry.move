@@ -8,10 +8,9 @@ module middleware::stake_registry{
     use aptos_framework::timestamp;
     use aptos_framework::primary_fungible_store;
 
-    use middleware::middleware_manager;
-
     use restaking::staker_manager;
 
+    use middleware::middleware_manager;
     use middleware::service_manager;
 
     use aptos_std::smart_table::{Self, SmartTable};

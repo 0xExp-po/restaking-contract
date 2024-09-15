@@ -6,10 +6,10 @@ module middleware::middleware_manager {
     use std::string::{Self, String};
     use std::signer;
 
-    friend middleware::stake_registry;
-    friend middleware::service_manager;
+    friend middleware::index_registry;
     friend middleware::bls_apk_registry;
     friend middleware::registry_coordinator;
+    friend middleware::stake_registry;
 
     const OWNER_NAME: vector<u8> = b"OWNER";
 
@@ -42,13 +42,13 @@ module middleware::middleware_manager {
 
     /// Can be called by friended modules to obtain the resource account signer.
     public(friend) fun get_signer(): signer acquires PermissionConfig {
-        let signer_cap = &borrow_global<PermissionConfig>(@restaking).signer_cap;
+        let signer_cap = &borrow_global<PermissionConfig>(@middleware).signer_cap;
         account::create_signer_with_capability(signer_cap)
     }
 
     /// Can be called by friended modules to keep track of a system address.
     public(friend) fun add_address(name: String, object: address) acquires PermissionConfig {
-        let addresses = &mut borrow_global_mut<PermissionConfig>(@restaking).addresses;
+        let addresses = &mut borrow_global_mut<PermissionConfig>(@middleware).addresses;
         smart_table::upsert(addresses, name, object);
     }
 
@@ -70,12 +70,12 @@ module middleware::middleware_manager {
     }
 
     public fun get_address(name: String): address acquires PermissionConfig {
-        let addresses = &borrow_global<PermissionConfig>(@restaking).addresses;
+        let addresses = &borrow_global<PermissionConfig>(@middleware).addresses;
         *smart_table::borrow(addresses, name)
     }
 
     inline fun safe_permission_config(): &PermissionConfig acquires PermissionConfig {
-        borrow_global<PermissionConfig>(@restaking)
+        borrow_global<PermissionConfig>(@middleware)
     }
 
     #[test_only]
@@ -99,4 +99,5 @@ module middleware::middleware_manager {
             });
         };
     }
+
 }
