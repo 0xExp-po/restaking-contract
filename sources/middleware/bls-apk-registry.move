@@ -101,7 +101,7 @@ module middleware::bls_apk_registry{
         let store = bls_apk_registry_store();
         let pubkey = smart_table::borrow(&store.operator_to_pk, operator_address);
 
-        update_quorum_apk(quorum_numbers, pubkey, true)
+        update_quorum_apk(quorum_numbers, *pubkey, true)
     }
 
     public(friend) fun deregister_operator(operator: &signer, quorum_numbers: vector<u8>) acquires BLSApkRegistryStore {
@@ -109,7 +109,7 @@ module middleware::bls_apk_registry{
         let store = bls_apk_registry_store();
         let pubkey = smart_table::borrow(&store.operator_to_pk, operator_address);
 
-        update_quorum_apk(quorum_numbers, pubkey, false)
+        update_quorum_apk(quorum_numbers, *pubkey, false)
     }
 
     public(friend) fun register_bls_pubkey(operator: &signer, params: PubkeyRegistrationParams, pubkey_registration_msg_hash: vector<u8>): vector<u8> acquires BLSApkRegistryStore {
@@ -136,7 +136,7 @@ module middleware::bls_apk_registry{
         return g1_bytes
     }
 
-    fun update_quorum_apk(quorum_numbers: vector<u8>, pubkey: &PublicKeyWithPoP, is_register: bool) acquires BLSApkRegistryStore {
+    fun update_quorum_apk(quorum_numbers: vector<u8>, pubkey: PublicKeyWithPoP, is_register: bool) acquires BLSApkRegistryStore {
         let i = 0;
         while (i < vector::length(&quorum_numbers)) {
             let quorum_number = *vector::borrow(&quorum_numbers, i);
@@ -146,10 +146,10 @@ module middleware::bls_apk_registry{
             // Update pubkey
             let current_apk = current_apk_mut(quorum_number);
             if (is_register) {
-                vector::push_back(current_apk, *pubkey);
+                vector::push_back(current_apk, pubkey);
             } else {
-                assert!(vector::contains(current_apk, pubkey), EPUBKEY_NOT_EXIST);
-                vector::remove_value(current_apk, pubkey);
+                assert!(vector::contains(current_apk, &pubkey), EPUBKEY_NOT_EXIST);
+                vector::remove_value(current_apk, &pubkey);
             };
 
             let borrow_new_apk = *current_apk;
@@ -182,7 +182,7 @@ module middleware::bls_apk_registry{
     inline fun current_apk_mut(quorum_number: u8): &mut vector<PublicKeyWithPoP> acquires BLSApkRegistryStore {
         let store_mut = bls_apk_registry_store_mut();
         let current_apk_mut = smart_table::borrow_mut(&mut store_mut.current_apk, quorum_number);
-        return current_apk_mut
+        current_apk_mut
     }
 
     inline fun bls_apk_registry_store(): &BLSApkRegistryStore  acquires BLSApkRegistryStore {
