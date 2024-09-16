@@ -146,7 +146,10 @@ module middleware::stake_registry{
 
     // TODO: only coordinator
     public fun initialize_quorum(quorum_number: u8, minimum_stake: u128, strategy_params: vector<StrategyParams>) acquires StakeRegistryConfigs {
+
+
         quorum_exists(quorum_number);
+        add_strategy_params(quorum_number, strategy_params);
         set_minimum_stake_for_quorum(quorum_number, minimum_stake);
 
 
@@ -272,7 +275,6 @@ module middleware::stake_registry{
 
     fun add_strategy_params(quorum_number: u8, strategy_params: vector<StrategyParams>) acquires StakeRegistryConfigs {
         let new_strategy_params_length = vector::length(&strategy_params);
-
         assert!(new_strategy_params_length>0, ENO_STRATEGY_PROVIED);
 
         let existing_strategy_params_length = strategy_params_length(quorum_number);
@@ -345,4 +347,23 @@ module middleware::stake_registry{
     inline fun stake_registry_address(): address {
         middleware_manager::get_address(string::utf8(STAKE_REGISTRY_NAME))
     }
+
+    #[test_only]
+    friend middleware::service_manager_tests;
+
+    #[test_only]
+    public fun create_vec_strategy_params(strategy_params: StrategyParams): vector<StrategyParams> {
+        let vec = vector::empty<StrategyParams>();
+        vector::push_back(&mut vec, strategy_params);
+        return vec
+    }
+
+    #[test_only]
+    public fun create_strategy_param(metadata: Object<Metadata>, multiplier: u128,): StrategyParams {
+        return StrategyParams {
+            strategy: metadata,
+            multiplier,
+        }
+    }
+
 }
