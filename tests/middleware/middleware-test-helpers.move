@@ -14,8 +14,8 @@ module middleware::middleware_test_helpers {
   use middleware::service_manager;
   use middleware::stake_registry;
   
-  public fun middleware_set_up(deployer: &signer, ra: &signer){
-    middleware_manager::initialize_for_test(deployer, ra);
+  public fun middleware_set_up(deployer: &signer, middleware: &signer){
+    middleware_manager::initialize_for_test(deployer, middleware);
     bls_apk_registry::initialize();
     index_registry::initialize();
     service_manager::initialize();

@@ -1,11 +1,13 @@
 module middleware::index_registry{
     use aptos_framework::event;
+    use aptos_framework::object;
     use aptos_framework::timestamp;
     use aptos_framework::account::{Self, SignerCapability};
     use aptos_std::smart_table::{Self, SmartTable};
     use aptos_std::smart_vector::{Self, SmartVector};
     
     use std::string::{Self, String};
+    use std::bcs;
     use std::vector;
     use std::signer;
 
@@ -15,18 +17,20 @@ module middleware::index_registry{
     friend middleware::registry_coordinator;
 
     const INDEX_REGISTRY_NAME: vector<u8> = b"INDEX_REGISTRY_NAME";
+    const INDEX_REGISTRY_PREFIX: vector<u8> = b"INDEX_REGISTRY_PREFIX";
+
 
     const NOT_EXIST_ID: vector<u8> = b"NOT_EXIST_ID";
 
     const EQUORUM_NOT_EXIST: u64 = 1001;
     const EQUORUM_ALREADY_EXIST: u64 = 1002;
 
-    struct OperatorUpdate has store, drop {
+    struct OperatorUpdate has copy, store, drop {
         operator_id: String, 
         timestamp: u64
     }
 
-    struct QuorumUpdate has store, drop {
+    struct QuorumUpdate has copy, store, drop {
         operator_count: u32,
         timestamp: u64
     }
@@ -73,13 +77,22 @@ module middleware::index_registry{
       middleware_manager::get_address(string::utf8(INDEX_REGISTRY_NAME))
     }
 
+    public fun create_index_registry() acquires IndexRegistryConfigs{
+        let index_registry = index_registry_address();
+        let index_registry_signer = index_registry_signer();
+        move_to(index_registry_signer, IndexRegistryStore{
+            operator_index: smart_table::new(),
+            update_history: smart_table::new(),
+            count_history: smart_table::new()
+        })
+    }
+
     public(friend) fun register_operator(operator_id: String, quorum: vector<u8>): vector<u32> acquires IndexRegistryStore{
         let operators_per_quorum: vector<u32> = vector::empty();
 
         vector::for_each(quorum, |quorum_number| {
+            assert!(smart_table::contains(&index_registry_store().count_history, quorum_number), EQUORUM_NOT_EXIST);
             let count_history = smart_table::borrow(&index_registry_store().count_history, quorum_number);
-            let count_history_length = vector::length(count_history);
-            assert!(count_history_length > 0, EQUORUM_NOT_EXIST);
 
             let new_operator_count = increase_operator_count(quorum_number);
             assign_operator_to_index(operator_id, quorum_number, new_operator_count - 1);
@@ -105,15 +118,16 @@ module middleware::index_registry{
 
     public(friend) fun initialize_quorum(quorum_number: u8) acquires IndexRegistryStore{
         let store = index_registry_store_mut();
-        let count_history = smart_table::borrow_mut(&mut store.count_history, quorum_number);
-        let count_history_length = vector::length(count_history);
-        assert!(count_history_length == 0, EQUORUM_ALREADY_EXIST);
-
+        assert!(!smart_table::contains(&store.count_history, quorum_number), EQUORUM_ALREADY_EXIST);
+        let count_history: vector<QuorumUpdate> = vector::empty();
         let now = timestamp::now_seconds();
-        vector::push_back(count_history, QuorumUpdate{
+        vector::push_back(&mut count_history, QuorumUpdate{
             operator_count: 0,
             timestamp: now
-        })
+        });
+        smart_table::add(&mut store.count_history, quorum_number, count_history);
+        smart_table::add(&mut store.operator_index, quorum_number, smart_table::new());
+        smart_table::add(&mut store.update_history, quorum_number, smart_table::new());
     }
 
     fun assign_operator_to_index(operator_id: String, quorum_number: u8, index: u32) acquires IndexRegistryStore {
@@ -151,8 +165,20 @@ module middleware::index_registry{
     }
 
     fun update_operator_history(quorum_number: u8, operator_count: u32, new_operator_id: String) acquires IndexRegistryStore {
-        let latest_update = latest_operator_update_mut(quorum_number, operator_count);
+        let empty = operator_update_empty(quorum_number, operator_count);
         let now = timestamp::now_seconds();
+        
+        if (empty){
+            let operator_update = vector::singleton(OperatorUpdate{
+                operator_id: new_operator_id,
+                timestamp: now
+            });
+            let store_mut = index_registry_store_mut();
+            let operator_history_table = smart_table::borrow_mut(&mut store_mut.update_history, quorum_number);
+            smart_table::add(operator_history_table, operator_count, operator_update);
+            return
+        };
+        let latest_update = latest_operator_update_mut(quorum_number, operator_count);
         if (latest_update.timestamp == now) {
             latest_update.operator_id = new_operator_id;
         } else {
@@ -179,6 +205,17 @@ module middleware::index_registry{
         }
     } 
 
+    #[view]
+    public fun count_history(quorum_number: u8): vector<QuorumUpdate> acquires IndexRegistryStore {
+        *smart_table::borrow(&index_registry_store().count_history, quorum_number)
+    }
+
+    inline fun operator_update_empty(quorum_number: u8, operator_count: u32): bool acquires IndexRegistryStore {
+        let store = index_registry_store();
+        let operator_history_table = smart_table::borrow(&store.update_history, quorum_number);
+        let is_empty = !smart_table::contains(operator_history_table, operator_count);
+        is_empty
+    }
     inline fun latest_operator_update_mut(quorum_number: u8, operator_count: u32): &mut OperatorUpdate acquires IndexRegistryStore{
         let store = index_registry_store();
         let operator_history_length = vector::length(smart_table::borrow(smart_table::borrow(&store.update_history, quorum_number), operator_count));
@@ -228,4 +265,18 @@ module middleware::index_registry{
     inline fun index_registry_store_mut(): &mut IndexRegistryStore  acquires IndexRegistryStore {
         borrow_global_mut<IndexRegistryStore>(index_registry_address())
     }
+
+    inline fun index_registry_signer(): &signer acquires IndexRegistryConfigs{
+        &account::create_signer_with_capability(&borrow_global<IndexRegistryConfigs>(index_registry_address()).signer_cap)
+    }
+
+    inline fun index_registry_store_seeds(index_registry: address): vector<u8>{
+        let seeds = vector<u8>[];
+        vector::append(&mut seeds, INDEX_REGISTRY_PREFIX);
+        vector::append(&mut seeds, bcs::to_bytes(&index_registry));
+        seeds
+    }
+
+    #[test_only]
+    friend middleware::index_registry_tests;
 }
