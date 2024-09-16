@@ -81,19 +81,30 @@ module middleware::bls_apk_registry{
       middleware_manager::get_address(string::utf8(BLS_APK_REGISTRY_NAME))
     }
 
+    public fun create_index_registry() acquires BLSApkRegistryConfigs{
+        let index_registry = bls_apk_registry_address();
+        let index_registry_signer = bls_apk_registry_signer();
+        move_to(index_registry_signer, BLSApkRegistryStore{
+            operator_to_pk_hash: smart_table::new(),
+            pk_hash_to_operator: smart_table::new(),
+            operator_to_pk: smart_table::new(),
+            apk_history: smart_table::new(),
+            current_apk: smart_table::new()
+        })
+    }
+
 
     public(friend) fun initialize_quorum(quorum_number: u8) acquires BLSApkRegistryStore{
-        let apk_history_length = vector::length(smart_table::borrow(&bls_apk_registry_store().apk_history, quorum_number));
         let store = bls_apk_registry_store_mut();
-        let apk_history = smart_table::borrow_mut(&mut store.apk_history, quorum_number);
-        assert!(apk_history_length == 0, EQUORUM_ALREADY_EXIST);
-
+        assert!(!smart_table::contains(&store.apk_history, quorum_number), EQUORUM_ALREADY_EXIST);
+        let apk_history: vector<ApkUpdate> = vector::empty();
         let now = timestamp::now_seconds();
-        vector::push_back(apk_history, ApkUpdate{
+        vector::push_back(&mut apk_history, ApkUpdate{
             aggregate_pubkeys: option::none(),
             update_timestamp: now,
             next_update_timestamp: 0,
-        })
+        });
+        smart_table::add(&mut store.apk_history, quorum_number, apk_history);
     }
 
     public(friend) fun register_operator(operator: &signer, quorum_numbers: vector<u8>) acquires BLSApkRegistryStore {
@@ -191,5 +202,9 @@ module middleware::bls_apk_registry{
 
     inline fun bls_apk_registry_store_mut(): &mut BLSApkRegistryStore  acquires BLSApkRegistryStore {
         borrow_global_mut<BLSApkRegistryStore>(bls_apk_registry_address())
+    }
+
+    inline fun bls_apk_registry_signer(): &signer acquires BLSApkRegistryConfigs{
+        &account::create_signer_with_capability(&borrow_global<BLSApkRegistryConfigs>(bls_apk_registry_address()).signer_cap)
     }
 }

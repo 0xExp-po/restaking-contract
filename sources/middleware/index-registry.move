@@ -269,13 +269,6 @@ module middleware::index_registry{
         &account::create_signer_with_capability(&borrow_global<IndexRegistryConfigs>(index_registry_address()).signer_cap)
     }
 
-    inline fun index_registry_store_seeds(index_registry: address): vector<u8>{
-        let seeds = vector<u8>[];
-        vector::append(&mut seeds, INDEX_REGISTRY_PREFIX);
-        vector::append(&mut seeds, bcs::to_bytes(&index_registry));
-        seeds
-    }
-
     #[test_only]
     friend middleware::index_registry_tests;
 }
