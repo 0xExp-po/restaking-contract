@@ -27,8 +27,6 @@ module middleware::service_manager{
     const SERVICE_MANAGER_NAME: vector<u8> = b"SERVICE_MANAGER_NAME";
     const SERVICE_PREFIX: vector<u8> = b"SERVICE_PREFIX";
 
-    
-
     struct ServiceManagerConfigs has key {
         signer_cap: SignerCapability,
         strategy_params: SmartTable<u8, vector<StrategyParams>>,
@@ -69,9 +67,10 @@ module middleware::service_manager{
     }
 
     #[view]
-    public fun getRestakeableStrategies(operator: address): vector<address> acquires ServiceManagerConfigs {
+    public fun get_restakeable_strategies(operator: address): vector<address> acquires ServiceManagerConfigs {
+        let quorum_count = registry_coordinator::quorum_count();
         let configs = rewards_configs();
-        if (configs.quorum_count == 0){
+        if (quorum_count == 0){
             return vector::empty<address>()
         };
 
@@ -86,14 +85,14 @@ module middleware::service_manager{
         for (i in 0..configs.quorum_count) {
             let strategyParamsLength = vector::length(smart_table::borrow(&configs.strategy_params, i));
             for (j in 0..strategyParamsLength){
-                vector::push_back(&mut restaked_strategies, strategyParamsByIndex(i,j).strategy);
+                vector::push_back(&mut restaked_strategies, strategy_params_by_index(i,j).strategy);
             };
         };
 
         restaked_strategies
     }
 
-    public fun getOperatorRestakedStrategies(operator: address): vector<Object<Metadata>>{
+    public fun get_operator_restaked_strategies(operator: address): vector<Object<Metadata>>{
         let operator_id = registry_coordinator::get_operator_id(operator);
         let operator_bitmap = registry_coordinator::get_current_quorum_bitmap(operator_id);
         if (operator_bitmap == 0 || registry_coordinator::quorum_count() == 0) {
@@ -125,7 +124,7 @@ module middleware::service_manager{
 
 
 
-    inline fun strategyParamsByIndex(quorum_number: u8, index: u64): & StrategyParams{
+    inline fun strategy_params_by_index(quorum_number: u8, index: u64): & StrategyParams{
         let configs = rewards_configs();
         let strategy = smart_table::borrow(&configs.strategy_params, quorum_number);
         let strategyParams = vector::borrow(strategy, index);
