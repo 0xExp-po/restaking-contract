@@ -166,8 +166,8 @@ module middleware::registry_coordinator{
         index_registry::deregister_operator(string::utf8(operator_id), quorum_numbers);
     }
 
-    public fun create_quorum(operator_set_params: OperatorSetParam, minumum_stake: u128, strategy_params: vector<stake_registry::StrategyParams>) {
-        
+    public(friend) fun create_quorum(operator_set_params: OperatorSetParam, minumum_stake: u128, strategy_params: vector<stake_registry::StrategyParams>) acquires RegistryCoordinatorConfigs {
+        create_quorum_internal(operator_set_params, minumum_stake, strategy_params);
     }
 
     fun create_quorum_internal(operator_set_params: OperatorSetParam, minumum_stake: u128, strategy_params: vector<stake_registry::StrategyParams>) acquires RegistryCoordinatorConfigs {
@@ -289,7 +289,16 @@ module middleware::registry_coordinator{
         middleware_manager::get_address(string::utf8(REGISTRY_COORDINATOR_NAME))
     }
 
+    public fun operator_set_param(max_operator_count: u32): OperatorSetParam {
+        return OperatorSetParam{
+            max_operator_count,
+        }
+    }
+
     public fun set_bit(number: u256, index: u8): u256 {
         number | (1u256 << index)
     }
+
+    #[test_only]
+    friend middleware::service_manager_tests;
 }
