@@ -105,6 +105,7 @@ module middleware::bls_apk_registry{
             next_update_timestamp: 0,
         });
         smart_table::add(&mut store.apk_history, quorum_number, apk_history);
+        smart_table::add(&mut store.current_apk, quorum_number, vector::empty());
     }
 
     public(friend) fun register_operator(operator: &signer, quorum_numbers: vector<u8>) acquires BLSApkRegistryStore {
@@ -147,7 +148,7 @@ module middleware::bls_apk_registry{
         return g1_bytes
     }
 
-    fun update_quorum_apk(quorum_numbers: vector<u8>, pubkey: PublicKeyWithPoP, is_register: bool) acquires BLSApkRegistryStore {
+    fun update_quorum_apk(quorum_numbers: vector<u8>, pubkey: PublicKeyWithPoP, register: bool) acquires BLSApkRegistryStore {
         let i = 0;
         while (i < vector::length(&quorum_numbers)) {
             let quorum_number = *vector::borrow(&quorum_numbers, i);
@@ -156,7 +157,7 @@ module middleware::bls_apk_registry{
 
             // Update pubkey
             let current_apk = current_apk_mut(quorum_number);
-            if (is_register) {
+            if (register) {
                 vector::push_back(current_apk, pubkey);
             } else {
                 assert!(vector::contains(current_apk, &pubkey), EPUBKEY_NOT_EXIST);
