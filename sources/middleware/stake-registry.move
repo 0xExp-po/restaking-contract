@@ -181,7 +181,6 @@ module middleware::stake_registry{
     fun weight_of_operator_for_quorum(quorum_number: u8, operator: address): (u128, bool) acquires StakeRegistryConfigs{
         let configs = stake_registry_configs();
         let weight: u128 = 0;
-        let strategy_param_length: u64 = smart_vector::length(smart_table::borrow(&configs.strategy_params, quorum_number));
         
         let shares = vector::empty<u128>();
         for (i in 0..100) {

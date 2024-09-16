@@ -82,7 +82,7 @@ module middleware::bls_apk_registry{
     }
 
 
-    public(friend) fun init_quorum(quorum_number: u8) acquires BLSApkRegistryStore{
+    public(friend) fun initialize_quorum(quorum_number: u8) acquires BLSApkRegistryStore{
         let apk_history_length = vector::length(smart_table::borrow(&bls_apk_registry_store().apk_history, quorum_number));
         let store = bls_apk_registry_store_mut();
         let apk_history = smart_table::borrow_mut(&mut store.apk_history, quorum_number);

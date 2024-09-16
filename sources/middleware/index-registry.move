@@ -103,7 +103,7 @@ module middleware::index_registry{
         });
     }
 
-    public(friend) fun init_quorum(quorum_number: u8) acquires IndexRegistryStore{
+    public(friend) fun initialize_quorum(quorum_number: u8) acquires IndexRegistryStore{
         let store = index_registry_store_mut();
         let count_history = smart_table::borrow_mut(&mut store.count_history, quorum_number);
         let count_history_length = vector::length(count_history);

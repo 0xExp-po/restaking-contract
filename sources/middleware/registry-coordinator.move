@@ -39,6 +39,7 @@ module middleware::registry_coordinator{
     struct RegistryCoordinatorConfigs has key {
         signer_cap: SignerCapability,
         quorum_count: u8,
+        quorum_params: SmartTable<u8, OperatorSetParam>,
         operator_infos: SmartTable<address, OperatorInfo>,
         operator_bitmap: SmartTable<vector<u8>, u256>,
         operator_bitmap_history: SmartTable<vector<u8>, vector<QuorumBitmapUpdate>>,
@@ -61,6 +62,10 @@ module middleware::registry_coordinator{
         quorum_bitmap: u256,
     }
 
+    struct OperatorSetParam has copy, drop, store {
+        max_operator_count: u32,
+    }
+
     public entry fun initialize() {
         if (is_initialized()) {
             return
@@ -73,6 +78,7 @@ module middleware::registry_coordinator{
         move_to(&stake_registry_signer, RegistryCoordinatorConfigs {
             signer_cap,
             quorum_count: 0,
+            quorum_params: smart_table::new(),
             operator_infos: smart_table::new(),
             operator_bitmap: smart_table::new(),
             operator_bitmap_history: smart_table::new(), 
@@ -158,6 +164,32 @@ module middleware::registry_coordinator{
         bls_apk_registry::deregister_operator(operator, quorum_numbers);
         stake_registry::deregister_operator(operator_id, quorum_numbers);
         index_registry::deregister_operator(string::utf8(operator_id), quorum_numbers);
+    }
+
+    public fun create_quorum(operator_set_params: OperatorSetParam, minumum_stake: u128, strategy_params: vector<stake_registry::StrategyParams>) {
+        
+    }
+
+    fun create_quorum_internal(operator_set_params: OperatorSetParam, minumum_stake: u128, strategy_params: vector<stake_registry::StrategyParams>) acquires RegistryCoordinatorConfigs {
+        let pre_quorum_count = quorum_count();
+        let mut_configs = mut_registry_coordinator_configs();
+        let mut_quorum_count = &mut mut_configs.quorum_count;
+        *mut_quorum_count = *mut_quorum_count + 1;
+
+        set_operator_set_params_internal(pre_quorum_count, operator_set_params);
+        stake_registry::initialize_quorum(pre_quorum_count, minumum_stake, strategy_params);
+        index_registry::initialize_quorum(pre_quorum_count);
+        bls_apk_registry::initialize_quorum(pre_quorum_count);
+    }
+
+    public fun set_operator_set_params(quorum_number: u8, operator_set_params: OperatorSetParam) acquires RegistryCoordinatorConfigs {
+        set_operator_set_params_internal(quorum_number, operator_set_params);
+    }
+
+    fun set_operator_set_params_internal(quorum_number: u8, operator_set_params: OperatorSetParam) acquires RegistryCoordinatorConfigs {
+        let mut_configs = mut_registry_coordinator_configs();
+        let mut_quorum_param = smart_table::borrow_mut(&mut mut_configs.quorum_params, quorum_number);
+        *mut_quorum_param = operator_set_params;
     }
 
     fun ordered_vecu8_to_bitmap(vec: vector<u8>): u256 {
