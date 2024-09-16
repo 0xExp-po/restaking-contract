@@ -112,7 +112,7 @@ module middleware::bls_apk_registry{
         update_quorum_apk(quorum_numbers, *pubkey, false)
     }
 
-    public(friend) fun register_bls_pubkey(operator: &signer, params: PubkeyRegistrationParams, pubkey_registration_msg_hash: vector<u8>): vector<u8> acquires BLSApkRegistryStore {
+    public(friend) fun register_bls_pubkey(operator: &signer, params: PubkeyRegistrationParams, msg: vector<u8>): vector<u8> acquires BLSApkRegistryStore {
         let g1_bytes = public_key_with_pop_to_bytes(&params.pubkey_g1);
         assert!(vector::length(&g1_bytes) == 96, EINVALID_PUBKEY_G1);
         assert!(vector::length(&public_key_with_pop_to_bytes(&params.pubkey_g2)) == 96, EINVALID_PUBKEY_G2);
