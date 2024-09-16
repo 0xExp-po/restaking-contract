@@ -13,6 +13,13 @@ module middleware::registry_coordinator{
     use restaking::staker_manager;
 
     use middleware::service_manager;
+    use middleware::bls_apk_registry;
+    use middleware::stake_registry;
+    use middleware::index_registry;
+
+    use restaking::operator_manager;
+
+    use restaking::math_utils;
 
     use aptos_std::smart_table::{Self, SmartTable};
     use aptos_std::smart_vector::{Self, SmartVector};
@@ -34,6 +41,7 @@ module middleware::registry_coordinator{
         quorum_count: u8,
         operator_infos: SmartTable<address, OperatorInfo>,
         operator_bitmap: SmartTable<vector<u8>, u256>,
+        operator_bitmap_history: SmartTable<vector<u8>, vector<QuorumBitmapUpdate>>,
     }
 
     struct PubkeyRegistrationParams has copy, drop, store {
@@ -45,6 +53,12 @@ module middleware::registry_coordinator{
     struct OperatorInfo has copy, drop, store {
         operator_id: vector<u8>,
         operator_status: u8, // 0: NEVER_REGISTERED, 1: REGISTERED, 2: DEREGISTERED
+    }
+
+    struct QuorumBitmapUpdate has copy, drop, store {
+        update_timestamp: u64,
+        next_update_timestamp: u64, 
+        quorum_bitmap: u256,
     }
 
     public entry fun initialize() {
@@ -61,27 +75,156 @@ module middleware::registry_coordinator{
             quorum_count: 0,
             operator_infos: smart_table::new(),
             operator_bitmap: smart_table::new(),
+            operator_bitmap_history: smart_table::new(), 
         });
     }
 
     #[view]
     public fun is_initialized(): bool{
-        // TODO: use a seperate package manager
         middleware_manager::address_exists(string::utf8(REGISTRY_COORDINATOR_NAME))
     }
 
     // TODO: not done
-    public fun registor_operator(quorum_numbers: vector<u8> ) {
+    public fun registor_operator(quorum_numbers: vector<u8>, operator: &signer, params: bls_apk_registry::PubkeyRegistrationParams) acquires RegistryCoordinatorConfigs{
+        let operator_id = get_or_create_operator_id(operator, params);
+
+        let (_ , _ , num_operators_per_quorum) = register_operator_internal(operator, operator_id, quorum_numbers);
+
+        let quorum_numbers_length = vector::length(&quorum_numbers);
+
+
+        // TODO: limit num operators per quorum
         return
     }
 
-    fun get_or_create_operator_id(operator: address, params: PubkeyRegistrationParams): vector<u8>{
+    fun register_operator_internal(operator: &signer, operator_id: vector<u8>, quorum_numbers: vector<u8>): (vector<u128>, vector<u128>, vector<u32>) acquires RegistryCoordinatorConfigs {
+        let quorum_to_add = math_utils::bytes32_to_u256(quorum_numbers);
+        let current_bitmap = current_operator_bitmap(operator_id); 
+        // TODO: error name
+        assert!(quorum_to_add!=0, 301);
+        // TODO: assert no bit in common
+        let new_bitmap = current_bitmap | quorum_to_add;
+
+        update_operator_bitmap(operator_id, new_bitmap);
+
+        let mut_configs = mut_registry_coordinator_configs();
+        let operator_address = signer::address_of(operator);
+        let mut_operator_info = smart_table::borrow_mut(&mut mut_configs.operator_infos, operator_address);
+        
+        if (mut_operator_info.operator_status != 1) {
+            *mut_operator_info = OperatorInfo{
+                operator_id: operator_id,
+                operator_status: 1,
+            };
+            // TODO: 
+            operator_manager::create_operator_store(operator_address);
+        };
+
+        bls_apk_registry::register_operator(operator, quorum_numbers);
+
+        let (operator_stakes, total_stakes) = stake_registry::register_operator(operator_address, operator_id, quorum_numbers);
+        let num_operators_per_quorum = index_registry::register_operator(string::utf8(operator_id), quorum_numbers);
+        return (operator_stakes, total_stakes, num_operators_per_quorum)
+    }
+
+    public fun deregister_operator(operator: &signer, quorumNumbers: vector<u8>) acquires RegistryCoordinatorConfigs{
+        deregister_operator_internal(operator, quorumNumbers);
+    }
+
+    fun deregister_operator_internal(operator: &signer, quorum_numbers: vector<u8>) acquires RegistryCoordinatorConfigs {
+        let operator_address = signer::address_of(operator);
+        let configs = registry_coordinator_configs();
+        let operator_info = smart_table::borrow(&configs.operator_infos, operator_address);
+        let operator_id = operator_info.operator_id;
+        assert!(operator_info.operator_status == 1, 202);
+
+        let quorums_to_remove = ordered_vecu8_to_bitmap(quorum_numbers);
+
+        let current_bitmap = current_operator_bitmap(operator_id);
+
+        // TODO: assert here
+        let new_bitmap = current_bitmap&(0xff^quorums_to_remove);
+        update_operator_bitmap(operator_id, new_bitmap);
+
+
+        let mut_configs = mut_registry_coordinator_configs();
+        let mut_operator_info = smart_table::borrow_mut(&mut mut_configs.operator_infos, operator_address);
+        if (new_bitmap == 0) {
+            mut_operator_info.operator_status = 2;
+            // TODO: serviceManager.deregisterOperatorFromAVS(operator);
+
+        };
+
+        bls_apk_registry::deregister_operator(operator, quorum_numbers);
+        stake_registry::deregister_operator(operator_id, quorum_numbers);
+        index_registry::deregister_operator(string::utf8(operator_id), quorum_numbers);
+    }
+
+    fun ordered_vecu8_to_bitmap(vec: vector<u8>): u256 {
+        let bitmap: u256 = 0;
+        let bitmask : u256 = 0;
+        let vec_length = vector::length(&vec);
+        let first_element = vector::borrow(&vec, 0);
+        bitmap = 1 << (*first_element as u8);
+
+        for (i in 1..vec_length) {
+            let next_element = vector::borrow(&vec, i);
+            bitmask = 1 << *next_element;
+
+            assert!(bitmask > bitmap, 203);
+            bitmap = (bitmap | bitmask);
+        };
+        return bitmap
+    }
+
+
+    fun get_or_create_operator_id(operator: &signer, params: bls_apk_registry::PubkeyRegistrationParams): vector<u8>{
         let operator_id = vector::empty<u8>();
         // operatorId = blsApkRegistry.getOperatorId(operator);
         if (vector::is_empty(&operator_id)) {
-            // operatorId = blsApkRegistry.registerBLSPublicKey(operator, params, pubkeyRegistrationMessageHash(operator));
+            // TODO: help
+            operator_id = bls_apk_registry::register_bls_pubkey(operator, params, vector::empty<u8>());
         };
         return operator_id
+    }
+
+    fun pubkey_registration_message_hash(operator: &signer) {
+        // TODO: help
+    }
+
+    fun current_operator_bitmap(operator_id: vector<u8>):u256 acquires RegistryCoordinatorConfigs {
+        let configs = registry_coordinator_configs();
+        let operator_bitmap_history_length = vector::length(smart_table::borrow(&configs.operator_bitmap_history, operator_id));
+        if (operator_bitmap_history_length == 0) {
+            return 0
+        } else {
+            return vector::borrow(smart_table::borrow(&configs.operator_bitmap_history, operator_id), operator_bitmap_history_length-1).quorum_bitmap
+        }
+    }
+
+    fun update_operator_bitmap(operator_id : vector<u8>, new_bitmap: u256) acquires RegistryCoordinatorConfigs {
+        let mut_configs = mut_registry_coordinator_configs();
+        let mut_operator_bitmap = smart_table::borrow_mut(&mut mut_configs.operator_bitmap_history, operator_id);
+        let history_length = vector::length(mut_operator_bitmap);
+        if (history_length == 0) {
+            vector::push_back(mut_operator_bitmap, QuorumBitmapUpdate{
+                update_timestamp: timestamp::now_seconds(),
+                next_update_timestamp: 0,
+                quorum_bitmap: new_bitmap,
+            })
+        } else {
+            let last_update = vector::borrow_mut(mut_operator_bitmap, history_length-1);
+            if (last_update.update_timestamp == timestamp::now_seconds()) {
+                last_update.quorum_bitmap = new_bitmap;
+            } else {
+                last_update.next_update_timestamp = timestamp::now_seconds();
+                vector::push_back(mut_operator_bitmap, QuorumBitmapUpdate{
+                    update_timestamp: timestamp::now_seconds(),
+                    next_update_timestamp: 0,
+                    quorum_bitmap: new_bitmap,
+                });
+            }
+        }
     }
 
     #[view]

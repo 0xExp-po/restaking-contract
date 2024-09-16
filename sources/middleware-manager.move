@@ -10,6 +10,7 @@ module middleware::middleware_manager {
     friend middleware::bls_apk_registry;
     friend middleware::registry_coordinator;
     friend middleware::stake_registry;
+    friend middleware::service_manager;
 
     const OWNER_NAME: vector<u8> = b"OWNER";
 

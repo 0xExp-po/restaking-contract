@@ -159,7 +159,7 @@ module restaking::operator_manager {
     });
   }
 
-  fun create_operator_store(operator: address) acquires OperatorManagerConfigs{
+  public fun create_operator_store(operator: address) acquires OperatorManagerConfigs{
     let operator_manager_signer = operator_manager_signer();
     let ctor = &object::create_named_object(operator_manager_signer, operator_store_seeds(operator));
     let operator_store_signer = object::generate_signer(ctor);

@@ -46,8 +46,6 @@ module middleware::service_manager{
         expiry: u128,
     }
 
-
-
     public entry fun initialize() {
         if (is_initialized()) {
             return
