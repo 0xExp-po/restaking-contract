@@ -103,9 +103,8 @@ module middleware::index_registry{
 
     public(friend) fun deregister_operator(operator_id: String, quorum: vector<u8>) acquires IndexRegistryStore{
         vector::for_each(quorum, |quorum_number| {
+            assert!(smart_table::contains(&index_registry_store().count_history, quorum_number), EQUORUM_NOT_EXIST);
             let count_history = smart_table::borrow(&index_registry_store().count_history, quorum_number);
-            let count_history_length = vector::length(count_history);
-            assert!(count_history_length > 0, EQUORUM_NOT_EXIST);
 
             let index_to_remove = get_operator_index(quorum_number, operator_id);
             let new_operator_count = decrease_operator_count(quorum_number);
