@@ -33,11 +33,13 @@ module middleware::registry_coordinator{
     use std::vector;
     use std::signer;
 
-    const REGISTRY_COORDINATOR_NAME: vector<u8> = b"STAKE_REGISTRY_NAME";
-    const REGISTRY_COORDINATOR_PREFIX: vector<u8> = b"STAKE_PREFIX";
+    const REGISTRY_COORDINATOR_NAME: vector<u8> = b"REGISTRY_COORDINATOR_NAME";
+    const REGISTRY_COORDINATOR_PREFIX: vector<u8> = b"REGISTRY_COORDINATOR_PREFIX";
 
     struct RegistryCoordinatorConfigs has key {
         signer_cap: SignerCapability,
+    }
+    struct RegistryCoordinatorStore has key {
         quorum_count: u8,
         quorum_params: SmartTable<u8, OperatorSetParam>,
         operator_infos: SmartTable<address, OperatorInfo>,
@@ -72,17 +74,23 @@ module middleware::registry_coordinator{
         };
 
         // derive a resource account from signer to manage User share Account
-        let staking_signer = &middleware_manager::get_signer();
-        let (stake_registry_signer, signer_cap) = account::create_resource_account(staking_signer, REGISTRY_COORDINATOR_NAME);
-        middleware_manager::add_address(string::utf8(REGISTRY_COORDINATOR_NAME), signer::address_of(&stake_registry_signer));
-        move_to(&stake_registry_signer, RegistryCoordinatorConfigs {
+        let operator_signer = &middleware_manager::get_signer();
+        let (registry_coordinator_signer, signer_cap) = account::create_resource_account(operator_signer, REGISTRY_COORDINATOR_NAME);
+        middleware_manager::add_address(string::utf8(REGISTRY_COORDINATOR_NAME), signer::address_of(&registry_coordinator_signer));
+        move_to(&registry_coordinator_signer, RegistryCoordinatorConfigs {
             signer_cap,
+        });
+    }
+
+    public fun create_registry_coordinator_store() acquires RegistryCoordinatorConfigs{
+        let registry_coordinator_signer = registry_coordinator_signer();
+        move_to(registry_coordinator_signer, RegistryCoordinatorStore{
             quorum_count: 0,
             quorum_params: smart_table::new(),
             operator_infos: smart_table::new(),
             operator_bitmap: smart_table::new(),
             operator_bitmap_history: smart_table::new(), 
-        });
+        })
     }
 
     #[view]
@@ -91,7 +99,7 @@ module middleware::registry_coordinator{
     }
 
     // TODO: not done
-    public fun registor_operator(quorum_numbers: vector<u8>, operator: &signer, params: bls_apk_registry::PubkeyRegistrationParams) acquires RegistryCoordinatorConfigs{
+    public fun registor_operator(quorum_numbers: vector<u8>, operator: &signer, params: bls_apk_registry::PubkeyRegistrationParams) acquires RegistryCoordinatorStore{
         let operator_id = get_or_create_operator_id(operator, params);
 
         let (_ , _ , num_operators_per_quorum) = register_operator_internal(operator, operator_id, quorum_numbers);
@@ -103,7 +111,7 @@ module middleware::registry_coordinator{
         return
     }
 
-    fun register_operator_internal(operator: &signer, operator_id: vector<u8>, quorum_numbers: vector<u8>): (vector<u128>, vector<u128>, vector<u32>) acquires RegistryCoordinatorConfigs {
+    fun register_operator_internal(operator: &signer, operator_id: vector<u8>, quorum_numbers: vector<u8>): (vector<u128>, vector<u128>, vector<u32>) acquires RegistryCoordinatorStore {
         let quorum_to_add = math_utils::bytes32_to_u256(quorum_numbers);
         let current_bitmap = current_operator_bitmap(operator_id); 
         // TODO: error name
@@ -113,9 +121,9 @@ module middleware::registry_coordinator{
 
         update_operator_bitmap(operator_id, new_bitmap);
 
-        let mut_configs = mut_registry_coordinator_configs();
+        let mut_store = mut_registry_coordinator_store();
         let operator_address = signer::address_of(operator);
-        let mut_operator_info = smart_table::borrow_mut(&mut mut_configs.operator_infos, operator_address);
+        let mut_operator_info = smart_table::borrow_mut(&mut mut_store.operator_infos, operator_address);
         
         if (mut_operator_info.operator_status != 1) {
             *mut_operator_info = OperatorInfo{
@@ -133,14 +141,14 @@ module middleware::registry_coordinator{
         return (operator_stakes, total_stakes, num_operators_per_quorum)
     }
 
-    public fun deregister_operator(operator: &signer, quorumNumbers: vector<u8>) acquires RegistryCoordinatorConfigs{
+    public fun deregister_operator(operator: &signer, quorumNumbers: vector<u8>) acquires RegistryCoordinatorStore{
         deregister_operator_internal(operator, quorumNumbers);
     }
 
-    fun deregister_operator_internal(operator: &signer, quorum_numbers: vector<u8>) acquires RegistryCoordinatorConfigs {
+    fun deregister_operator_internal(operator: &signer, quorum_numbers: vector<u8>) acquires RegistryCoordinatorStore {
         let operator_address = signer::address_of(operator);
-        let configs = registry_coordinator_configs();
-        let operator_info = smart_table::borrow(&configs.operator_infos, operator_address);
+        let store = registry_coordinator_store();
+        let operator_info = smart_table::borrow(&store.operator_infos, operator_address);
         let operator_id = operator_info.operator_id;
         assert!(operator_info.operator_status == 1, 202);
 
@@ -153,8 +161,8 @@ module middleware::registry_coordinator{
         update_operator_bitmap(operator_id, new_bitmap);
 
 
-        let mut_configs = mut_registry_coordinator_configs();
-        let mut_operator_info = smart_table::borrow_mut(&mut mut_configs.operator_infos, operator_address);
+        let mut_store = mut_registry_coordinator_store();
+        let mut_operator_info = smart_table::borrow_mut(&mut mut_store.operator_infos, operator_address);
         if (new_bitmap == 0) {
             mut_operator_info.operator_status = 2;
             // TODO: serviceManager.deregisterOperatorFromAVS(operator);
@@ -166,14 +174,14 @@ module middleware::registry_coordinator{
         index_registry::deregister_operator(string::utf8(operator_id), quorum_numbers);
     }
 
-    public(friend) fun create_quorum(operator_set_params: OperatorSetParam, minumum_stake: u128, strategy_params: vector<stake_registry::StrategyParams>) acquires RegistryCoordinatorConfigs {
+    public(friend) fun create_quorum(operator_set_params: OperatorSetParam, minumum_stake: u128, strategy_params: vector<stake_registry::StrategyParams>) acquires RegistryCoordinatorStore {
         create_quorum_internal(operator_set_params, minumum_stake, strategy_params);
     }
 
-    fun create_quorum_internal(operator_set_params: OperatorSetParam, minumum_stake: u128, strategy_params: vector<stake_registry::StrategyParams>) acquires RegistryCoordinatorConfigs {
+    fun create_quorum_internal(operator_set_params: OperatorSetParam, minumum_stake: u128, strategy_params: vector<stake_registry::StrategyParams>) acquires RegistryCoordinatorStore {
         let pre_quorum_count = quorum_count();
-        let mut_configs = mut_registry_coordinator_configs();
-        let mut_quorum_count = &mut mut_configs.quorum_count;
+        let mut_store = mut_registry_coordinator_store();
+        let mut_quorum_count = &mut mut_store.quorum_count;
         *mut_quorum_count = *mut_quorum_count + 1;
 
         set_operator_set_params_internal(pre_quorum_count, operator_set_params);
@@ -182,13 +190,13 @@ module middleware::registry_coordinator{
         bls_apk_registry::initialize_quorum(pre_quorum_count);
     }
 
-    public fun set_operator_set_params(quorum_number: u8, operator_set_params: OperatorSetParam) acquires RegistryCoordinatorConfigs {
+    public fun set_operator_set_params(quorum_number: u8, operator_set_params: OperatorSetParam) acquires RegistryCoordinatorStore {
         set_operator_set_params_internal(quorum_number, operator_set_params);
     }
 
-    fun set_operator_set_params_internal(quorum_number: u8, operator_set_params: OperatorSetParam) acquires RegistryCoordinatorConfigs {
-        let mut_configs = mut_registry_coordinator_configs();
-        let mut_quorum_param = smart_table::borrow_mut(&mut mut_configs.quorum_params, quorum_number);
+    fun set_operator_set_params_internal(quorum_number: u8, operator_set_params: OperatorSetParam) acquires RegistryCoordinatorStore {
+        let mut_store = mut_registry_coordinator_store();
+        let mut_quorum_param = smart_table::borrow_mut(&mut mut_store.quorum_params, quorum_number);
         *mut_quorum_param = operator_set_params;
     }
 
@@ -224,19 +232,19 @@ module middleware::registry_coordinator{
         // TODO: help
     }
 
-    fun current_operator_bitmap(operator_id: vector<u8>):u256 acquires RegistryCoordinatorConfigs {
-        let configs = registry_coordinator_configs();
-        let operator_bitmap_history_length = vector::length(smart_table::borrow(&configs.operator_bitmap_history, operator_id));
+    fun current_operator_bitmap(operator_id: vector<u8>):u256 acquires RegistryCoordinatorStore {
+        let store = registry_coordinator_store();
+        let operator_bitmap_history_length = vector::length(smart_table::borrow(&store.operator_bitmap_history, operator_id));
         if (operator_bitmap_history_length == 0) {
             return 0
         } else {
-            return vector::borrow(smart_table::borrow(&configs.operator_bitmap_history, operator_id), operator_bitmap_history_length-1).quorum_bitmap
+            return vector::borrow(smart_table::borrow(&store.operator_bitmap_history, operator_id), operator_bitmap_history_length-1).quorum_bitmap
         }
     }
 
-    fun update_operator_bitmap(operator_id : vector<u8>, new_bitmap: u256) acquires RegistryCoordinatorConfigs {
-        let mut_configs = mut_registry_coordinator_configs();
-        let mut_operator_bitmap = smart_table::borrow_mut(&mut mut_configs.operator_bitmap_history, operator_id);
+    fun update_operator_bitmap(operator_id : vector<u8>, new_bitmap: u256) acquires RegistryCoordinatorStore {
+        let mut_store = mut_registry_coordinator_store();
+        let mut_operator_bitmap = smart_table::borrow_mut(&mut mut_store.operator_bitmap_history, operator_id);
         let history_length = vector::length(mut_operator_bitmap);
         if (history_length == 0) {
             vector::push_back(mut_operator_bitmap, QuorumBitmapUpdate{
@@ -260,33 +268,38 @@ module middleware::registry_coordinator{
     }
 
     #[view]
-    public fun get_operator_id(operator: address): vector<u8> acquires RegistryCoordinatorConfigs {
-        let configs = registry_coordinator_configs();
-        smart_table::borrow(&configs.operator_infos, operator).operator_id
+    public fun get_operator_id(operator: address): vector<u8> acquires RegistryCoordinatorStore {
+        let store = registry_coordinator_store();
+        smart_table::borrow(&store.operator_infos, operator).operator_id
     }
 
     #[view]
-    public fun get_current_quorum_bitmap(operator_id: vector<u8>): u256 acquires RegistryCoordinatorConfigs {
-        let configs = registry_coordinator_configs();
-        *smart_table::borrow(&configs.operator_bitmap, operator_id)
+    public fun get_current_quorum_bitmap(operator_id: vector<u8>): u256 acquires RegistryCoordinatorStore {
+        let store = registry_coordinator_store();
+        *smart_table::borrow(&store.operator_bitmap, operator_id)
     }
 
     #[view]
-    public fun quorum_count(): u8 acquires RegistryCoordinatorConfigs {
-        let configs = registry_coordinator_configs();
-        configs.quorum_count
+    public fun quorum_count(): u8 acquires RegistryCoordinatorStore {
+        let store = registry_coordinator_store();
+        store.quorum_count
     }
 
-    inline fun registry_coordinator_configs(): &RegistryCoordinatorConfigs acquires RegistryCoordinatorConfigs{
-        borrow_global<RegistryCoordinatorConfigs>(registry_coordinator_address())
+    inline fun registry_coordinator_store(): &RegistryCoordinatorStore acquires RegistryCoordinatorStore{
+        borrow_global<RegistryCoordinatorStore>(registry_coordinator_address())
     }
 
-    inline fun mut_registry_coordinator_configs(): &mut RegistryCoordinatorConfigs acquires RegistryCoordinatorConfigs {
-        borrow_global_mut<RegistryCoordinatorConfigs>(registry_coordinator_address())
+    inline fun mut_registry_coordinator_store(): &mut RegistryCoordinatorStore acquires RegistryCoordinatorStore {
+        borrow_global_mut<RegistryCoordinatorStore>(registry_coordinator_address())
     }
 
-    inline fun registry_coordinator_address(): address {
+    #[view]
+    public fun registry_coordinator_address(): address {
         middleware_manager::get_address(string::utf8(REGISTRY_COORDINATOR_NAME))
+    }
+
+    inline fun registry_coordinator_signer(): &signer acquires RegistryCoordinatorConfigs{
+        &account::create_signer_with_capability(&borrow_global<RegistryCoordinatorConfigs>(registry_coordinator_address()).signer_cap)
     }
 
     public fun operator_set_param(max_operator_count: u32): OperatorSetParam {

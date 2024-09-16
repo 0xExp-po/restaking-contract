@@ -74,11 +74,10 @@ module middleware::index_registry{
     #[view]
     /// Return the address of the resource account that stores pool manager configs.
     public fun index_registry_address(): address {
-      middleware_manager::get_address(string::utf8(INDEX_REGISTRY_NAME))
+        middleware_manager::get_address(string::utf8(INDEX_REGISTRY_NAME))
     }
 
     public fun create_index_registry() acquires IndexRegistryConfigs{
-        let index_registry = index_registry_address();
         let index_registry_signer = index_registry_signer();
         move_to(index_registry_signer, IndexRegistryStore{
             operator_index: smart_table::new(),
