@@ -14,7 +14,7 @@ module middleware::index_registry_tests {
         middleware_test_helpers::middleware_set_up(deployer, middleware);
 
         let next_quorum = 0;
-        index_registry::create_index_registry();
+        index_registry::create_index_registry_store();
         index_registry::initialize_quorum(next_quorum);
 
         assert!(vector::length(&index_registry::count_history(next_quorum)) == 1, 1);
@@ -25,7 +25,7 @@ module middleware::index_registry_tests {
         middleware_test_helpers::middleware_set_up(deployer, middleware);
 
         let next_quorum = 0;
-        index_registry::create_index_registry();
+        index_registry::create_index_registry_store();
         index_registry::initialize_quorum(next_quorum);
 
         assert!(vector::length(&index_registry::count_history(next_quorum)) == 1, 1);
@@ -38,7 +38,7 @@ module middleware::index_registry_tests {
         middleware_test_helpers::middleware_set_up(deployer, middleware);
 
         let next_quorum = 0;
-        index_registry::create_index_registry();
+        index_registry::create_index_registry_store();
         index_registry::initialize_quorum(next_quorum);
 
         assert!(vector::length(&index_registry::count_history(next_quorum)) == 1, 1);

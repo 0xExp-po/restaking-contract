@@ -89,13 +89,19 @@ module middleware::registry_coordinator{
             quorum_params: smart_table::new(),
             operator_infos: smart_table::new(),
             operator_bitmap: smart_table::new(),
-            operator_bitmap_history: smart_table::new(), 
+            operator_bitmap_history: smart_table::new(),
         })
     }
 
     #[view]
     public fun is_initialized(): bool{
         middleware_manager::address_exists(string::utf8(REGISTRY_COORDINATOR_NAME))
+    }
+
+    fun ensure_registry_coordinator_store() acquires RegistryCoordinatorConfigs{
+        if(!exists<RegistryCoordinatorStore>(registry_coordinator_address())){
+            create_registry_coordinator_store();
+        }
     }
 
     // TODO: not done
@@ -174,7 +180,8 @@ module middleware::registry_coordinator{
         index_registry::deregister_operator(string::utf8(operator_id), quorum_numbers);
     }
 
-    public(friend) fun create_quorum(operator_set_params: OperatorSetParam, minumum_stake: u128, strategy_params: vector<stake_registry::StrategyParams>) acquires RegistryCoordinatorStore {
+    public(friend) fun create_quorum(operator_set_params: OperatorSetParam, minumum_stake: u128, strategy_params: vector<stake_registry::StrategyParams>) acquires RegistryCoordinatorStore, RegistryCoordinatorConfigs {
+        ensure_registry_coordinator_store();
         create_quorum_internal(operator_set_params, minumum_stake, strategy_params);
     }
 
@@ -196,8 +203,8 @@ module middleware::registry_coordinator{
 
     fun set_operator_set_params_internal(quorum_number: u8, operator_set_params: OperatorSetParam) acquires RegistryCoordinatorStore {
         let mut_store = mut_registry_coordinator_store();
-        let mut_quorum_param = smart_table::borrow_mut(&mut mut_store.quorum_params, quorum_number);
-        *mut_quorum_param = operator_set_params;
+        let mut_quorum_param = smart_table::borrow_mut_with_default(&mut mut_store.quorum_params, quorum_number, operator_set_params);
+        *mut_quorum_param = operator_set_params
     }
 
     fun ordered_vecu8_to_bitmap(vec: vector<u8>): u256 {

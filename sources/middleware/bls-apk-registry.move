@@ -81,10 +81,16 @@ module middleware::bls_apk_registry{
       middleware_manager::get_address(string::utf8(BLS_APK_REGISTRY_NAME))
     }
 
-    public fun create_index_registry() acquires BLSApkRegistryConfigs{
-        let index_registry = bls_apk_registry_address();
-        let index_registry_signer = bls_apk_registry_signer();
-        move_to(index_registry_signer, BLSApkRegistryStore{
+    fun ensure_bls_apk_registry_store() acquires BLSApkRegistryConfigs{
+        if(!exists<BLSApkRegistryStore>(bls_apk_registry_address())){
+            create_bls_apk_registry_store();
+        }
+    }
+
+    public fun create_bls_apk_registry_store() acquires BLSApkRegistryConfigs{
+        let bls_apk_registry = bls_apk_registry_address();
+        let bls_apk_registry_signer = bls_apk_registry_signer();
+        move_to(bls_apk_registry_signer, BLSApkRegistryStore{
             operator_to_pk_hash: smart_table::new(),
             pk_hash_to_operator: smart_table::new(),
             operator_to_pk: smart_table::new(),
@@ -94,7 +100,8 @@ module middleware::bls_apk_registry{
     }
 
 
-    public(friend) fun initialize_quorum(quorum_number: u8) acquires BLSApkRegistryStore{
+    public(friend) fun initialize_quorum(quorum_number: u8) acquires BLSApkRegistryStore, BLSApkRegistryConfigs{
+        ensure_bls_apk_registry_store();
         let store = bls_apk_registry_store_mut();
         assert!(!smart_table::contains(&store.apk_history, quorum_number), EQUORUM_ALREADY_EXIST);
         let apk_history: vector<ApkUpdate> = vector::empty();

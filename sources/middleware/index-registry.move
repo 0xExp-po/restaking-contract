@@ -77,7 +77,13 @@ module middleware::index_registry{
         middleware_manager::get_address(string::utf8(INDEX_REGISTRY_NAME))
     }
 
-    public fun create_index_registry() acquires IndexRegistryConfigs{
+    fun ensure_index_regsitry_store() acquires IndexRegistryConfigs{
+        if(!exists<IndexRegistryStore>(index_registry_address())){
+            create_index_registry_store();
+        }
+    }
+
+    public fun create_index_registry_store() acquires IndexRegistryConfigs{
         let index_registry_signer = index_registry_signer();
         move_to(index_registry_signer, IndexRegistryStore{
             operator_index: smart_table::new(),
@@ -114,7 +120,8 @@ module middleware::index_registry{
         });
     }
 
-    public(friend) fun initialize_quorum(quorum_number: u8) acquires IndexRegistryStore{
+    public(friend) fun initialize_quorum(quorum_number: u8) acquires IndexRegistryStore, IndexRegistryConfigs{
+        ensure_index_regsitry_store();
         let store = index_registry_store_mut();
         assert!(!smart_table::contains(&store.count_history, quorum_number), EQUORUM_ALREADY_EXIST);
         let count_history: vector<QuorumUpdate> = vector::empty();
@@ -256,6 +263,7 @@ module middleware::index_registry{
         let index = *smart_table::borrow(operator_index, operator_id);
         index
     }
+
     inline fun index_registry_store(): &IndexRegistryStore  acquires IndexRegistryStore {
         borrow_global<IndexRegistryStore>(index_registry_address())
     }

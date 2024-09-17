@@ -1,12 +1,13 @@
 #[test_only]
 
-module middleware::service_manager_tests {
+module middleware::stake_registry_tests {
   use aptos_framework::coin::{Self, Coin};
   use aptos_framework::fungible_asset::{Self, FungibleAsset, Metadata};
-  use aptos_framework::object;
+  use aptos_framework::object::{Self, Object};
   use aptos_framework::primary_fungible_store;
 
   use aptos_std::comparator;
+  use aptos_std::debug;
 
   use std::signer;
   use std::vector;
@@ -20,9 +21,7 @@ module middleware::service_manager_tests {
   public fun test_init_quorum(deployer: &signer, middleware: &signer, staker: &signer) {
     middleware_test_helpers::middleware_set_up(deployer, middleware);
     assert!(registry_coordinator::is_initialized() == true, 0);
-    registry_coordinator::create_registry_coordinator_store();
 
-    let avs_addr = signer::address_of(staker);
     let staked_amount = 1000;
     
     let fa = middleware_test_helpers::create_fungible_asset_and_mint(deployer, b"Token 1", 1000);
@@ -33,11 +32,19 @@ module middleware::service_manager_tests {
 
     let operator_set_params = registry_coordinator::operator_set_param(100);
     let minimum_stake: u128 = 1;
-
+    let quorum_number = 0;
 
     let strategy_params = stake_registry::create_strategy_param(token, 1);
     let vec_strategy_params = stake_registry::create_vec_strategy_params(strategy_params);
 
-    registry_coordinator::create_quorum(operator_set_params, minimum_stake, vec_strategy_params);
+    stake_registry::initialize_quorum(quorum_number , 1, vec_strategy_params);
+
+    let metadata = stake_registry::strategy_by_index(0, 0);
+
+    assert!(stake_registry::minimum_stake(quorum_number) == 1, 1);
+    assert!(stake_registry::strategy_params_length(quorum_number) == 1, 2);
+    assert!(stake_registry::total_history_length(quorum_number)== 1, 3);
+
+    debug::print<Object<Metadata>>(&metadata);
   }
 }
