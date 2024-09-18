@@ -160,7 +160,7 @@ module middleware::stake_registry{
     // TODO: only coordinator
     public fun initialize_quorum(quorum_number: u8, minimum_stake: u128, strategy_params: vector<StrategyParams>) acquires StakeRegistryStore, StakeRegistryConfigs {
         ensure_stake_regsitry_store();
-        quorum_exists(quorum_number);
+        quorum_not_exists(quorum_number);
         add_strategy_params(quorum_number, strategy_params);
         set_minimum_stake_for_quorum(quorum_number, minimum_stake);
 
@@ -286,7 +286,7 @@ module middleware::stake_registry{
 
     fun add_strategy_params(quorum_number: u8, strategy_params: vector<StrategyParams>) acquires StakeRegistryStore {
         let new_strategy_params_length = vector::length(&strategy_params);
-        assert!(new_strategy_params_length>0, ENO_STRATEGY_PROVIED);
+        assert!(new_strategy_params_length> 0, ENO_STRATEGY_PROVIED);
 
         let existing_strategy_params_length = strategy_params_length(quorum_number);
         let mut_store = mut_stake_registry_store();
@@ -358,6 +358,12 @@ module middleware::stake_registry{
     }
     
     inline fun quorum_exists(quorum_number: u8) {
+        let store = stake_registry_store();
+        let stake_updates_length = vector::length(smart_table::borrow_with_default(&store.total_stake_history, quorum_number, &vector::empty<StakeUpdate>()));
+        assert!(stake_updates_length > 0, EUNINITIALZED_QUORUM);
+    }
+
+    inline fun quorum_not_exists(quorum_number: u8) {
         let store = stake_registry_store();
         let stake_updates_length = vector::length(smart_table::borrow_with_default(&store.total_stake_history, quorum_number, &vector::empty<StakeUpdate>()));
         assert!(stake_updates_length == 0, EUNINITIALZED_QUORUM);
