@@ -118,6 +118,7 @@ module middleware::registry_coordinator{
     }
 
     fun register_operator_internal(operator: &signer, operator_id: vector<u8>, quorum_numbers: vector<u8>): (vector<u128>, vector<u128>, vector<u32>) acquires RegistryCoordinatorStore {
+        // TODO: using orderedBytesArrayToBitmap
         let quorum_to_add = math_utils::bytes32_to_u256(quorum_numbers);
         let current_bitmap = current_operator_bitmap(operator_id); 
         // TODO: error name
@@ -226,8 +227,8 @@ module middleware::registry_coordinator{
 
 
     fun get_or_create_operator_id(operator: &signer, params: bls_apk_registry::PubkeyRegistrationParams): vector<u8>{
-        let operator_id = vector::empty<u8>();
-        // operatorId = blsApkRegistry.getOperatorId(operator);
+        let operator_address = signer::address_of(operator);
+        let operator_id = bls_apk_registry::get_operator_id(operator_address);
         if (vector::is_empty(&operator_id)) {
             // TODO: help
             operator_id = bls_apk_registry::register_bls_pubkey(operator, params, vector::empty<u8>());
@@ -321,4 +322,6 @@ module middleware::registry_coordinator{
 
     #[test_only]
     friend middleware::service_manager_tests;
+    #[test_only]
+    friend middleware::registry_coordinator_tests;
 }

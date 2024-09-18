@@ -1,6 +1,6 @@
 #[test_only]
 
-module middleware::service_manager_tests {
+module middleware::registry_coordinator_tests {
   use aptos_framework::coin::{Self, Coin};
   use aptos_framework::fungible_asset::{Self, FungibleAsset, Metadata};
   use aptos_framework::object;

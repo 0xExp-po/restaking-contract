@@ -192,6 +192,13 @@ module middleware::bls_apk_registry{
         }
     }
 
+    #[view]
+    public fun get_operator_id(operator: address): vector<u8> acquires BLSApkRegistryStore{
+        let store = bls_apk_registry_store();
+        let operator_id = smart_table::borrow(&store.operator_to_pk_hash, operator);
+        return *operator_id
+    }
+    
     inline fun latest_apk_update_mut(quorum_number: u8): &mut ApkUpdate acquires BLSApkRegistryStore {
         let store_mut = bls_apk_registry_store_mut();
         let apk_history_length = vector::length(smart_table::borrow(&store_mut.apk_history, quorum_number));

@@ -29,8 +29,7 @@ module middleware::service_manager{
 
     struct ServiceManagerConfigs has key {
         signer_cap: SignerCapability,
-        strategy_params: SmartTable<u8, vector<StrategyParams>>,
-        quorum_count: u8,
+
     }
 
     struct StrategyParams has copy, drop, store {
@@ -55,8 +54,6 @@ module middleware::service_manager{
         middleware_manager::add_address(string::utf8(SERVICE_MANAGER_NAME), signer::address_of(&service_manager_signer));
         move_to(&service_manager_signer, ServiceManagerConfigs {
             signer_cap,
-            strategy_params: smart_table::new(),
-            quorum_count: 0,
         });
     }
 
@@ -67,25 +64,24 @@ module middleware::service_manager{
     }
 
     #[view]
-    public fun get_restakeable_strategies(operator: address): vector<address> acquires ServiceManagerConfigs {
+    public fun get_restakeable_strategies(): vector<Object<Metadata>> {
         let quorum_count = registry_coordinator::quorum_count();
-        let configs = rewards_configs();
         if (quorum_count == 0){
-            return vector::empty<address>()
+            return vector::empty<Object<Metadata>>()
         };
 
         
         let strategy_count: u64 = 0;
-        for (i in 0..configs.quorum_count) {
-            strategy_count = strategy_count + vector::length(smart_table::borrow(&configs.strategy_params, i));
+        for (i in 0..quorum_count) {
+            strategy_count = strategy_count + stake_registry::strategy_params_length(i);
         };
 
-        let restaked_strategies = vector::empty<address>() ;
+        let restaked_strategies = vector::empty<Object<Metadata>>() ;
 
-        for (i in 0..configs.quorum_count) {
-            let strategyParamsLength = vector::length(smart_table::borrow(&configs.strategy_params, i));
-            for (j in 0..strategyParamsLength){
-                vector::push_back(&mut restaked_strategies, strategy_params_by_index(i,j).strategy);
+        for (i in 0..quorum_count) {
+            let strategy_params_length = stake_registry::strategy_params_length(i);
+            for (j in 0..strategy_params_length){
+                vector::push_back(&mut restaked_strategies, stake_registry::strategy_by_index(i,j));
             };
         };
 
@@ -122,24 +118,19 @@ module middleware::service_manager{
         return restaked_strategies
     }
 
-
-
-    inline fun strategy_params_by_index(quorum_number: u8, index: u64): & StrategyParams{
-        let configs = rewards_configs();
-        let strategy = smart_table::borrow(&configs.strategy_params, quorum_number);
-        let strategyParams = vector::borrow(strategy, index);
-        strategyParams
+    inline fun service_manager_configs(): &ServiceManagerConfigs acquires ServiceManagerConfigs{
+        borrow_global<ServiceManagerConfigs>(service_manager_address())
     }
 
-    inline fun rewards_configs(): &ServiceManagerConfigs acquires ServiceManagerConfigs{
-        borrow_global<ServiceManagerConfigs>(rewards_coordinator_address())
+    inline fun mut_service_manager_configs(): &mut ServiceManagerConfigs acquires ServiceManagerConfigs {
+        borrow_global_mut<ServiceManagerConfigs>(service_manager_address())
     }
 
-    inline fun mut_rewards_configs(): &mut ServiceManagerConfigs acquires ServiceManagerConfigs {
-        borrow_global_mut<ServiceManagerConfigs>(rewards_coordinator_address())
-    }
-
-    inline fun rewards_coordinator_address(): address {
+    inline fun service_manager_address(): address {
         middleware_manager::get_address(string::utf8(SERVICE_MANAGER_NAME))
+    }
+
+    inline fun service_manager_signer(): &signer acquires ServiceManagerConfigs{
+        &account::create_signer_with_capability(&borrow_global<ServiceManagerConfigs>(service_manager_address()).signer_cap)
     }
 }
