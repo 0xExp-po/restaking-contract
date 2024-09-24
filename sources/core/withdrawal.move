@@ -300,6 +300,13 @@ module restaking::withdrawal {
     configs.min_withdrawal_delay = delay;
   }
 
+
+  #[view]
+  public fun minimum_withdrawal_delay(): u64 acquires WithdrawalConfigs{
+    let configs = withdrawal_configs();
+    return configs.min_withdrawal_delay
+  }
+
   public entry fun set_token_withdrawal_delay(owner: &signer, token: Object<Metadata>, delay: u64) acquires WithdrawalConfigs{
     package_manager::only_owner(signer::address_of(owner));
     assert!(delay <= MAX_WITHDRAWAL_DELAY, EMAX_WITHDRAWAL_DELAY_EXCEEDED);
